@@ -8,7 +8,7 @@ work_dir='/mnt/hgfs/test1/'
 #return file name
 def get_file_name_strings(file_dir):
     #system
-    string_interesting='"evil|system|read|recv|popen|hack|exec|setuid|http|send|write"'
+    string_interesting='"evil|system|read|recv|popen|hack|exec|setuid|http|send|write|passwd|yum.repos.d"'
     file_elf=[]
     i=0
     for root,dirs,files in os.walk(file_dir):
@@ -23,7 +23,7 @@ def get_file_name_strings(file_dir):
                     print 'string output:\n '+out_bytes1
                     if(out_bytes1!=''):
                         good=''
-                        if(out_bytes1.find('evil')!=-1 or out_bytes1.find('passwd')!=-1 or out_bytes1.find('wget')!=-1):
+                        if(out_bytes1.find('evil')!=-1 or out_bytes1.find('passwd')!=-1 or out_bytes1.find('yum.repos.d')!=-1):
                             good='good!!!'
                         print 'find file : '+this_file+' !!!!!!' + ' '+str(i)+' '+good
                         file_elf.append(this_file)
