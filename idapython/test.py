@@ -38,7 +38,11 @@ def initial_node_name_dict():
 #initial global func name address dict
 def initial_func_name_addr_dict(file_name):
 	global g_func_name_address
-	func_file=file_name+'.funcs'
+	if(file_name.find('.')!=-1):
+		no_dot_file=file_name[:file_name.find('.')]
+	else:
+		no_dot_file=file_name
+	func_file=no_dot_file+'.funcs'
 	myfile=open(func_file,'r')
 	for line in myfile.readlines():
 		func_addr=line.split(' ')[0][:-1] #strip L
@@ -50,7 +54,11 @@ def initial_func_name_addr_dict(file_name):
 def initial_ida_get_call_graph(file_name):	
 	global g_graph_lines,work_dir
 	#ida64.exe  -A -S"D:\source\idapython\test-ida.py" "D:\source\test1\old\p_16\symlinks"
-	gdl_file=file_name+'.gdl'
+	if(file_name.find('.')!=-1):
+		no_dot_file=file_name[:file_name.find('.')]
+	else:
+		no_dot_file=file_name
+	gdl_file=no_dot_file+'.gdl'
 	if(os.path.isfile(gdl_file)==False):		
 		cmd='ida64.exe -S"'+work_dir+'idapython\\idapython\\idapython_get_call_graph.py" -A '+file_name
 		print cmd
@@ -68,7 +76,10 @@ def initial_ida_get_call_graph(file_name):
 def get_caller_func(callee_func_name): 
 	global g_graph_lines,g_node_name_num,g_node_num_name
 	caller_func_name=set()
-	callee_func_num=g_node_name_num[callee_func_name]
+	try:
+		callee_func_num=g_node_name_num[callee_func_name]
+	except:
+		return caller_func_name
 	#get caller func node num from the edge
 	for line in g_graph_lines:
 		#edge: { sourcename: "40" targetname: "23" }
@@ -188,70 +199,64 @@ def test_system1(mylog,file_name_path):
 			if(flag_out==0):
 				mylog.write(',no\n')
 				print ',no'							
-def test_system(mylog,file_name_path):
-	global work_dir
-	file_name=os.path.basename(file_name_path)
-	p_dir=os.path.dirname(file_name_path).split('\\')[-1]
-	addrs=get_analysis_funcs_addr_name(work_dir+'addrs\\'+p_dir+'\\'+file_name+'.system')
-	#addrs=get_analysis_funcs_addr_name(work_dir+'addrs\\'+file_name+'.system')
+def test_recv_system(mylog,file_name_path):
+	global work_dir,g_func_name_address
+	caller_func_name_set=get_caller_func('.system')
 	
-	for addr_tuple in addrs:
-		addr=addr_tuple[0]
-		f = addr_tuple[1]
-		if(f is not None ):
-			flag_out=0
-			mylog.write('start system analysis func: '+f)
-			print 'start system analysis func: '+f,
-						
-			c_lines=ida_disassam(file_name_path,addr)
-			all_lines='\n'.join(c_lines)
-			lines_num=len(c_lines)
-			if(len(c_lines)==0):
-				print 'decompile_func error'
-			else:
-				if(all_lines.find('recv(')!=-1):
-					recv_lines=[]
-					taint_values=[]
-					#1. find recv value
-					for i in range(lines_num):
-						if(flag_out):
-							break
-						#if ( recv(v19, _5924fc070d840801bdbed7cbbbc52f3e, 0x7D0uLL, 0) < 0 )
-						regex=re.search('recv\((.*), (?P<src>(.*)), (.*), .*\)',c_lines[i])
-						if regex:
-							recv_value=regex.group('src')
-							recv_lines.append((i,recv_value))
-							taint_values.append(recv_value)
-					#2. find taint value from =
+	for caller_func_name in caller_func_name_set:
+		flag_out=0
+		mylog.write('start system_recv analysis func: '+caller_func_name)
+		print 'start system_recv analysis func: '+caller_func_name,
+		addr=g_func_name_address[caller_func_name]		
+		c_lines=ida_disassam(file_name_path,addr)
+		all_lines='\n'.join(c_lines)
+		lines_num=len(c_lines)
+		if(len(c_lines)==0):
+			print 'decompile_func error'
+		else:
+			if(all_lines.find('recv(')!=-1):
+				recv_lines=[]
+				taint_values=[]
+				#1. find recv value
+				for i in range(lines_num):
+					if(flag_out):
+						break
+					#if ( recv(v19, _5924fc070d840801bdbed7cbbbc52f3e, 0x7D0uLL, 0) < 0 )
+					regex=re.search('recv\((.*), (?P<src>(.*)), (.*), .*\)',c_lines[i])
+					if regex:
+						recv_value=regex.group('src')
+						recv_lines.append((i,recv_value))
+						taint_values.append(recv_value)
+				#2. find taint value from =
+				for (tmp_i,tmp_recv_value) in recv_lines:
+					for i in range(tmp_i,lines_num):
+						#*v28 = _5924fc070d840801bdbed7cbbbc52f3e[0];
+						#v30 = _5924fc070d840801bdbed7cbbbc52f3e;
+						regex_recv=re.search('(?P<src>(.*)) = '+tmp_recv_value+'.*;',c_lines[i])
+						if regex_recv:
+							taint_value=regex_recv.group('src').strip(' ').strip('*')
+							taint_values.append(taint_value)					
+				#3. find system call 
+				for taint_value1 in taint_values:
+					if(flag_out==1):
+						break
+					#print taint_value1
 					for (tmp_i,tmp_recv_value) in recv_lines:
-						for i in range(tmp_i,lines_num):
-							#*v28 = _5924fc070d840801bdbed7cbbbc52f3e[0];
-							#v30 = _5924fc070d840801bdbed7cbbbc52f3e;
-							regex_recv=re.search('(?P<src>(.*)) = '+tmp_recv_value+'.*;',c_lines[i])
-							if regex_recv:
-								taint_value=regex_recv.group('src').strip(' ').strip('*')
-								taint_values.append(taint_value)					
-					#3. find system call 
-					for taint_value1 in taint_values:
 						if(flag_out==1):
 							break
-						#print taint_value1
-						for (tmp_i,tmp_recv_value) in recv_lines:
-							if(flag_out==1):
-								break
-							for i in range(tmp_i,lines_num):
-								#system(_1b756b3aa8862d7730209615be62831e);
-								regex_recv1=re.search('system\(.*'+taint_value1+'.*\)',c_lines[i])
-								if regex_recv1:
-									mylog.write(',yes\n')
-									print ',yes'
-									flag_out=1
-									break					
-					
-					
-			if(flag_out==0):
-				mylog.write(',no\n')
-				print ',no'					
+						for i in range(tmp_i,lines_num):
+							#system(_1b756b3aa8862d7730209615be62831e);
+							regex_recv1=re.search('system\(.*'+taint_value1+'.*\)',c_lines[i])
+							if regex_recv1:
+								mylog.write(',yes\n')
+								print ',yes'
+								flag_out=1
+								break					
+				
+				
+		if(flag_out==0):
+			mylog.write(',no\n')
+			print ',no'					
 
 def test_read(mylog,file_name_path):
 	global work_dir
@@ -393,6 +398,8 @@ def test_recv_shellcode(mylog,file_name_path):
 				print ',no'
 def main(file_name_path):
 	global work_dir
+	index_1=file_name_arg.find('test_dir')
+	work_dir=file_name_arg[:index_1]
 	initial_ida_get_call_graph(file_name_path)
 	base_name=os.path.basename(file_name_path)
 	p_dir=os.path.dirname(file_name_path).split('\\')[-1]
@@ -406,9 +413,10 @@ def main(file_name_path):
 	mylog=open(output_dir+base_name+'.output','w')
 	print 'start popen analysis'	
 	test_popen(mylog,file_name_path)
+	
+	print 'start system_recv analysis'
+	test_recv_system(mylog,file_name_path)
 	'''
-	print 'start system analysis'
-	test_system(mylog,file_name_path)
 	test_system1(mylog,file_name_path)
 	print 'start recv_shellcode analysis'	
 	test_recv_shellcode(mylog,file_name_path)
@@ -422,10 +430,11 @@ def main(file_name_path):
 	'''
 
 
-    
+#D:\source\test1\old\test_dir\p_157\tmux    
 if(len(sys.argv)!=2):
 	print "python test_detect.py file_name"
 file_name_arg=sys.argv[1]
+
 print file_name_arg
 
 

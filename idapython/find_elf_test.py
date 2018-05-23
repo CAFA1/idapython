@@ -2,13 +2,14 @@ import os
 import subprocess
 import r2pipe
 import sys
+import re
 #return file name
-work_dir='/mnt/hgfs/test1/'
+global work_dir
 
 #return file name
 def get_file_name_strings(file_dir):
     #system
-    string_interesting='"evil|system|read|recv|popen|hack|exec|setuid|http|send|write|passwd|yum.repos.d"'
+    string_interesting='"tmp|ssh|etc|dev|evil|system|read|recv|popen|hack|exec|setuid|http|send|write|passwd|yum.repos.d"'
     file_elf=[]
     i=0
     for root,dirs,files in os.walk(file_dir):
@@ -19,12 +20,15 @@ def get_file_name_strings(file_dir):
             if(out_bytes.find('ELF')!=-1 and out_bytes.find('LSB relocatable')==-1):
                 try:
                     #print 'file output:\n'+out_bytes
-                    out_bytes1=subprocess.check_output('strings '+os.path.join(root,file)+' |egrep -n'+string_interesting,shell=True)
+                    out_bytes1=subprocess.check_output('strings '+os.path.join(root,file)+' |egrep -n '+string_interesting,shell=True)
                     print 'string output:\n '+out_bytes1
                     if(out_bytes1!=''):
                         good=''
-                        if(out_bytes1.find('evil')!=-1 or out_bytes1.find('passwd')!=-1 or out_bytes1.find('yum.repos.d')!=-1):
-                            good='good!!!'
+                        search_reg='(?P<good>(evil|/etc/passwd|yum\.repos\.d|/dev/input|/etc/nginx|/etc/hosts|ssh/authorized_keys|(/tmp/.*\.log)|system|popen|exec))'
+                        search_it=re.search(search_reg,out_bytes1)
+                        if search_it:
+                        
+                            good=search_it.group('good')+' good!!!'
                         print 'find file : '+this_file+' !!!!!!' + ' '+str(i)+' '+good
                         file_elf.append(this_file)
                         i=i+1
@@ -57,14 +61,20 @@ def cp_test_dir(file_name_path,p_dir_str):
     print cp_cmd
     os.system(cp_cmd)
     print 'windows cmd:\npython test.py D:\\source\\test1\\test_dir\\'+p_dir_str+'\\'+file_base_name+'\n'
+    if(len(sys.argv)==3):
+        print 'windows cmd:\npython test.py D:\\source\\test1\\old\\test_dir\\'+p_dir_str+'\\'+file_base_name+'\n'
 
 
 if __name__ == '__main__':
     #main()
+    global work_dir
     work_dir='/mnt/hgfs/test1/'
-    if(len(sys.argv)!=2):
+
+    if(len(sys.argv)!=2 and len(sys.argv)!=3):
         print "python .py dir"
         exit()
+    if(len(sys.argv)==3):
+        work_dir='/mnt/hgfs/test1/old/'
     dir1= sys.argv[1]
     dir2=work_dir+dir1
     #string1 = sys.argv[2]
