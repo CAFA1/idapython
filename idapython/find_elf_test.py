@@ -9,7 +9,7 @@ global work_dir
 #return file name
 def get_file_name_strings(file_dir):
     #system
-    string_interesting='"tmp|ssh|etc|dev|evil|system|read|recv|popen|hack|exec|setuid|http|send|write|passwd|yum.repos.d"'
+    string_interesting='"shellcode|SHELLCODE|tmp|ssh|etc|dev|evil|system|read|recv|popen|hack|exec|setuid|http|send|write|passwd|yum.repos.d"'
     file_elf=[]
     i=0
     for root,dirs,files in os.walk(file_dir):
@@ -24,7 +24,7 @@ def get_file_name_strings(file_dir):
                     print 'string output:\n '+out_bytes1
                     if(out_bytes1!=''):
                         good=''
-                        search_reg='(?P<good>(evil|/etc/passwd|yum\.repos\.d|/dev/input|/etc/nginx|/etc/hosts|ssh/authorized_keys|(/tmp/.*\.log)|system|popen|exec))'
+                        search_reg='(?P<good>(evil|/etc/passwd|yum\.repos\.d|/dev/input|/etc/nginx|/etc/hosts|ssh/authorized_keys|(/tmp/.*\.log)|system|popen|exec|shellcode|SHELLCODE))'
                         search_it=re.search(search_reg,out_bytes1)
                         if search_it:
                         

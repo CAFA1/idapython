@@ -89,7 +89,18 @@ def get_caller_func(callee_func_name):
 			caller_func_name.add(g_node_num_name[caller_func_num])
 	return caller_func_name
 	
-
+#get local variables ; //
+def get_local_vars(c_lines):
+	local_vars_list=[]
+	for line in c_lines:
+		if(line.find('; //')!=-1):
+			no_xie=line[:line.find(';')]
+			tmp_var=no_xie.split(' ')[-1]
+			if(tmp_var.find('[')!=-1):
+				tmp_var=tmp_var[:tmp_var.find('[')]
+			tmp_var=tmp_var.strip('*')
+			local_vars_list.append(tmp_var)
+	return local_vars_list
 
 
 def test_popen(mylog,file_name_path):
@@ -227,7 +238,7 @@ def test_recv_system(mylog,file_name_path):
 						recv_value=regex.group('src')
 						recv_lines.append((i,recv_value))
 						taint_values.append(recv_value)
-				#2. find taint value from =
+				#2. find taint value from = memcpy strcpy
 				for (tmp_i,tmp_recv_value) in recv_lines:
 					for i in range(tmp_i,lines_num):
 						#*v28 = _5924fc070d840801bdbed7cbbbc52f3e[0];
@@ -235,7 +246,10 @@ def test_recv_system(mylog,file_name_path):
 						regex_recv=re.search('(?P<src>(.*)) = '+tmp_recv_value+'.*;',c_lines[i])
 						if regex_recv:
 							taint_value=regex_recv.group('src').strip(' ').strip('*')
-							taint_values.append(taint_value)					
+							taint_values.append(taint_value)
+						#memcpy((void *)v29, v30, 8 * v32);
+				
+
 				#3. find system call 
 				for taint_value1 in taint_values:
 					if(flag_out==1):
@@ -396,6 +410,66 @@ def test_recv_shellcode(mylog,file_name_path):
 			if(flag_out==0):
 				mylog.write(',no\n')
 				print ',no'
+
+def test_recv_shellcode1(mylog,file_name_path):
+	global work_dir,g_func_name_address
+	caller_func_name_set=get_caller_func('.recv')
+	
+	for caller_func_name in caller_func_name_set:
+		flag_find=0
+		mylog.write('start system_recv analysis func: '+caller_func_name)
+		print 'start system_recv analysis func: '+caller_func_name,
+		addr=g_func_name_address[caller_func_name]		
+		c_lines=ida_disassam(file_name_path,addr)
+		all_lines='\n'.join(c_lines)
+		lines_num=len(c_lines)	
+
+		if(len(c_lines)==0):
+			print 'decompile_func error'
+		else:
+			#1. find call shellcode
+			#((void (__fastcall *)(_DWORD *, char *, signed __int64, signed __int64))v28)(v34, v35, v31, v33);
+			local_vars_list= get_local_vars(c_lines)
+			shellcode_values=[]
+			for i in range(lines_num):				
+				regex=re.search('call \*\)\(.*\)\)(?P<src>(.*))\)\(',c_lines[i])
+				if regex:
+					shellcode_value=regex.group('src')
+					#print str(i),shellcode_value
+					in_local=0
+					for tmp in local_vars_list:
+						if( shellcode_value.find(tmp)!=-1):
+							shellcode_value=tmp
+							in_local=1
+					if in_local :
+						#print str(i),shellcode_value
+						shellcode_values.append((i,shellcode_value))
+					break
+
+			#2. Backtracking
+			for (tmp_i,tmp_shellcode_value) in shellcode_values:
+				for i in range(tmp_i,0,-1):
+					#recv check
+					reg_recv=re.search('recv\(.*'+tmp_shellcode_value,c_lines[i])
+					if reg_recv:
+						flag_find=1
+						break
+					#= assign
+					reg_assign=re.search(tmp_shellcode_value+' = (?P<src>(.*));',c_lines[i])
+					if reg_assign:
+						tmp_shellcode_value1=reg_assign.group('src')
+						print str(i),tmp_shellcode_value1
+						
+						for tmp in local_vars_list:
+							if( tmp_shellcode_value1.find(tmp)!=-1):
+								tmp_shellcode_value=tmp
+		if(flag_find==0):
+			mylog.write(',no\n')
+			print ',no'
+		else:
+			mylog.write(',yes\n')
+			print ',yes'
+
 def main(file_name_path):
 	global work_dir
 	index_1=file_name_arg.find('test_dir')
@@ -416,10 +490,12 @@ def main(file_name_path):
 	
 	print 'start system_recv analysis'
 	test_recv_system(mylog,file_name_path)
+
+	print 'start recv_shellcode analysis'
+	test_recv_shellcode1(mylog,file_name_path)
 	'''
 	test_system1(mylog,file_name_path)
-	print 'start recv_shellcode analysis'	
-	test_recv_shellcode(mylog,file_name_path)
+	
 	print 'start read analysis'
 	test_read(mylog,file_name_path)
 	print 'start execl analysis'
